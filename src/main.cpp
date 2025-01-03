@@ -163,21 +163,6 @@ bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap)
   return 1;
 }
 
-// Callback that is triggered when btn2 is clicked/toggled
-static void event_handler_btn2(lv_event_t * e) {
-  lv_event_code_t code = lv_event_get_code(e);
-  lv_obj_t * obj = (lv_obj_t*) lv_event_get_target(e);
-  if(code == LV_EVENT_VALUE_CHANGED) {
-    if (lv_obj_has_state(obj, LV_STATE_CHECKED)) {
-      setLedGreen();
-    } else {
-      turnOffLed();
-    }
-    LV_UNUSED(obj);
-    LV_LOG_USER("Toggled %s", lv_obj_has_state(obj, LV_STATE_CHECKED) ? "on" : "off");
-  }
-}
-
 //========= Access Token =========
 Preferences preferences;
 
@@ -237,77 +222,6 @@ void downloadImage(const char* url) {
   TJpgDec.drawFsJpg(85, 5, "/albumArt.jpg");
 }
 
-
-void getCurrentSong() {
-  HTTPClient http;
-  http.begin("https://api.spotify.com/v1/me/player/currently-playing");
-  http.addHeader("Authorization", "Bearer " + readAccessToken());
-
-  int httpCode = http.GET();
-
-  if (httpCode == 200) {
-    String response = http.getString();
-
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, response);
-
-    if (error) {
-      Serial.println("Error al parsear el JSON: " + String(error.c_str()));
-      return;
-    }
-
-    const char* imageUrl = doc["item"]["album"]["images"][1]["url"];
-    downloadImage(imageUrl);
-
-    const char* track_name = doc["item"]["name"];
-    const char* artist_name = doc["item"]["artists"][0]["name"];
-    Serial.println("Canción actual:");
-    Serial.println("Nombre: " + String(track_name));
-    Serial.println("Artista: " + String(artist_name));
-    lv_label_set_text(song_title, String(track_name).c_str());
-    lv_label_set_text(artist, String(artist_name).c_str());
-
-  } else if (httpCode == 401) {
-    saveAccessToken(getNewAccessToken());
-    getCurrentSong();
-  } else if (httpCode == 204) {
-    Serial.println("No hay reproducción activa en este momento.");
-  } else {
-    Serial.println("Error al obtener la canción actual, Código HTTP: " + String(httpCode));
-    Serial.println("Respuesta: " + http.getString());
-  }
-
-  http.end();
-}
-
-bool isPlaying() {
-  HTTPClient http;
-  http.begin("https://api.spotify.com/v1/me/player");
-  http.addHeader("Authorization", "Bearer " + readAccessToken());
-
-  int httpCode = http.GET();
-
-  if (httpCode == 200) {
-    String response = http.getString();
-
-    JsonDocument doc;
-    DeserializationError error = deserializeJson(doc, response);
-
-    if (error) {
-      Serial.println("Error al parsear el JSON: " + String(error.c_str()));
-      return false;
-    }
-
-    Serial.println("Hay una cancion en produccion");
-    String is_playing = doc["is_playing"];
-
-    return (is_playing == "true");
-  }
-
-  Serial.println("No hay una cancion en produccion");
-  return false;
-}
-
 void updateSongInfo(JsonDocument doc){
 
   const char* imageUrl = doc["item"]["album"]["images"][1]["url"];
@@ -325,6 +239,8 @@ void updateSongInfo(JsonDocument doc){
 void updatePlayPauseButton() {
   lv_obj_clean(play_pause_button);
   lv_obj_t * btn_label = lv_label_create(play_pause_button);
+
+  // LVGL ya trae parte de los simbolos de FontAwesome
   if (current_playing_state == "true") {
     lv_label_set_text(btn_label, LV_SYMBOL_PAUSE);
   } else {
@@ -415,20 +331,8 @@ void playAndPause() {
     Serial.println("Error al enviar la solicitud");
     Serial.println(httpCode);  // Imprime el código de error HTTP
   }
-/*
-  lv_obj_clean(play_pause_button);
-  lv_obj_t * btn_label = lv_label_create(play_pause_button);
-  if (isSongPlaying) {
-    lv_label_set_text(btn_label, LV_SYMBOL_PAUSE);
-  } else {
-    lv_label_set_text(btn_label, LV_SYMBOL_PLAY);
-  }
 
-  lv_obj_set_style_text_color(btn_label, lv_color_hex(0x000000), 0);
-  lv_obj_center(btn_label);
-*/
   http.end();
-
 }
 
 void nextSong() {
@@ -499,7 +403,6 @@ static void event_handler_next_button(lv_event_t * e) {
 }
 
 void lv_create_main_gui(void) {
-  // LVGL ya trae parte de los simbolos de FontAwesome
   lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x383b39), 0);
 
   song_title = lv_label_create(lv_screen_active());
@@ -647,8 +550,6 @@ void setup() {
   lv_create_main_gui();
 
   lv_task_handler(); //Espero a que LVGL termine de dibujar todo para que no tape el artwork del disco al inicio
-
-  //getCurrentSong();
 }
 
 unsigned long lastTick = 0;
