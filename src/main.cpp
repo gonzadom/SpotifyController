@@ -8,6 +8,7 @@
 #include <Preferences.h>
 #include <TJpg_Decoder.h>
 #include <FS.h>
+#include "secrets.h"
 
 //========= Touch Screen =========
 // Touchscreen pins
@@ -62,6 +63,8 @@ void touchscreen_read(lv_indev_t * indev, lv_indev_data_t * data) {
 #define DRAW_BUF_SIZE (SCREEN_WIDTH * SCREEN_HEIGHT / 10 * (LV_COLOR_DEPTH / 8))
 uint32_t draw_buf[DRAW_BUF_SIZE / 4];
 
+//========= Spotify =========
+
 lv_obj_t * song_title;
 lv_obj_t * artist;
 lv_obj_t * play_pause_button;
@@ -101,8 +104,6 @@ void setUpLed() {
 }
 
 //========= WIFI =========
-const char* ssid = "Tu ssid";
-const char* password = "Tu password";
 
 void connectToWifi(const char* ssid, const char* password) {
   Serial.println("Conectando al WiFi...");
@@ -137,11 +138,6 @@ void connectToWifi(const char* ssid, const char* password) {
 
   turnOffLed();
 }
-
-//========= Spotify =========
-const String refreshToken = "Tu refresh token";
-const String clientId= "Tu client Id";
-const String clientSecret = "Tu client secret";
 
 // If logging is enabled, it will inform the user about what is happening in the library
 void log_print(lv_log_level_t level, const char * buf) {
