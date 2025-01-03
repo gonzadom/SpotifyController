@@ -402,7 +402,33 @@ static void event_handler_next_button(lv_event_t * e) {
   }
 }
 
-void lv_create_main_gui(void) {
+void screenSetUp() {
+  // Start LVGL
+  lv_init();
+  // Register print function for debugging
+  lv_log_register_print_cb(log_print);
+
+  // Start the SPI for the touchscreen and init the touchscreen
+  touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
+  touchscreen.begin(touchscreenSPI);
+  // Set the Touchscreen rotation in landscape mode
+  // Note: in some displays, the touchscreen might be upside down, so you might need to set the rotation to 0: touchscreen.setRotation(0);
+  touchscreen.setRotation(2);
+
+  // Create a display object
+  lv_display_t * disp;
+  // Initialize the TFT display using the TFT_eSPI library
+  disp = lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, draw_buf, sizeof(draw_buf));
+  lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_90);
+    
+  // Initialize an LVGL input device object (Touchscreen)
+  lv_indev_t * indev = lv_indev_create();
+  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
+  // Set the callback function to read Touchscreen input
+  lv_indev_set_read_cb(indev, touchscreen_read);
+}
+
+void drawMainGui(void) {
   lv_obj_set_style_bg_color(lv_screen_active(), lv_color_hex(0x383b39), 0);
 
   song_title = lv_label_create(lv_screen_active());
@@ -421,19 +447,9 @@ void lv_create_main_gui(void) {
   lv_obj_align(artist, LV_ALIGN_CENTER, 0, 65);
   lv_obj_set_style_text_color(artist, lv_color_hex(0xb3b3b3), 0);
 
+  
   lv_obj_t * btn_label;
-/*
-  // Create a Toggle button (btn2)
-  lv_obj_t * btn2 = lv_button_create(lv_screen_active());
-  lv_obj_add_event_cb(btn2, event_handler_btn2, LV_EVENT_ALL, NULL);
-  lv_obj_align(btn2, LV_ALIGN_CENTER, 0, 10);
-  lv_obj_add_flag(btn2, LV_OBJ_FLAG_CHECKABLE);
-  lv_obj_set_height(btn2, LV_SIZE_CONTENT);
 
-  btn_label = lv_label_create(btn2);
-  lv_label_set_text(btn_label, "Toggle");
-  lv_obj_center(btn_label);
-*/
   lv_obj_t * prev_button = lv_button_create(lv_screen_active());
   lv_obj_add_event_cb(prev_button, event_handler_prev_button, LV_EVENT_ALL, NULL);
   lv_obj_align(prev_button, LV_ALIGN_BOTTOM_MID, -70, -10);
@@ -443,11 +459,11 @@ void lv_create_main_gui(void) {
   lv_obj_set_style_border_width(prev_button, 0, 0);  // Remove border
   lv_obj_set_style_shadow_width(prev_button, 0, 0);  // Remove shadow
 
-
   btn_label = lv_label_create(prev_button);
   lv_label_set_text(btn_label, LV_SYMBOL_PREV);
   lv_obj_set_style_text_color(btn_label, lv_color_hex(0xb3b3b3), 0);
   lv_obj_center(btn_label);
+
 
   play_pause_button = lv_button_create(lv_screen_active());
   lv_obj_add_event_cb(play_pause_button, event_handler_play_pause_button, LV_EVENT_ALL, NULL);
@@ -458,22 +474,12 @@ void lv_create_main_gui(void) {
   lv_obj_set_size(play_pause_button, 35, 35);
   lv_obj_set_style_radius(play_pause_button, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_shadow_width(play_pause_button, 0, 0);
-/*
-  btn_label = lv_label_create(play_pause_button);
-  isSongPlaying = isPlaying();
-  if (isSongPlaying) {
-    lv_label_set_text(btn_label, LV_SYMBOL_PAUSE);
-  } else {
-    lv_label_set_text(btn_label, LV_SYMBOL_PLAY);
-  }
-  lv_obj_set_style_text_color(btn_label, lv_color_hex(0x000000), 0);
-  lv_obj_center(btn_label);
-*/
 
   btn_label = lv_label_create(play_pause_button);
   lv_label_set_text(btn_label, LV_SYMBOL_PLAY);
   lv_obj_set_style_text_color(btn_label, lv_color_hex(0x000000), 0);
   lv_obj_center(btn_label);
+
 
   lv_obj_t * next_button = lv_button_create(lv_screen_active());
   lv_obj_add_event_cb(next_button, event_handler_next_button, LV_EVENT_ALL, NULL);
@@ -488,6 +494,9 @@ void lv_create_main_gui(void) {
   lv_label_set_text(btn_label, LV_SYMBOL_NEXT);
   lv_obj_set_style_text_color(btn_label, lv_color_hex(0xb3b3b3), 0);
   lv_obj_center(btn_label);
+
+
+  lv_task_handler(); //Espero a que LVGL termine de dibujar todo para que no tape el artwork del disco al inicio
 }
 
 void setup() {
@@ -522,34 +531,10 @@ void setup() {
   TJpgDec.setSwapBytes(true);
   TJpgDec.setCallback(tft_output);
 
-  // Start LVGL
-  lv_init();
-  // Register print function for debugging
-  lv_log_register_print_cb(log_print);
-
-  // Start the SPI for the touchscreen and init the touchscreen
-  touchscreenSPI.begin(XPT2046_CLK, XPT2046_MISO, XPT2046_MOSI, XPT2046_CS);
-  touchscreen.begin(touchscreenSPI);
-  // Set the Touchscreen rotation in landscape mode
-  // Note: in some displays, the touchscreen might be upside down, so you might need to set the rotation to 0: touchscreen.setRotation(0);
-  touchscreen.setRotation(2);
-
-  // Create a display object
-  lv_display_t * disp;
-  // Initialize the TFT display using the TFT_eSPI library
-  disp = lv_tft_espi_create(SCREEN_WIDTH, SCREEN_HEIGHT, draw_buf, sizeof(draw_buf));
-  lv_display_set_rotation(disp, LV_DISPLAY_ROTATION_90);
-    
-  // Initialize an LVGL input device object (Touchscreen)
-  lv_indev_t * indev = lv_indev_create();
-  lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
-  // Set the callback function to read Touchscreen input
-  lv_indev_set_read_cb(indev, touchscreen_read);
+  screenSetUp();
 
   // Function to draw the GUI (text, buttons and sliders)
-  lv_create_main_gui();
-
-  lv_task_handler(); //Espero a que LVGL termine de dibujar todo para que no tape el artwork del disco al inicio
+  drawMainGui();
 }
 
 unsigned long lastTick = 0;
