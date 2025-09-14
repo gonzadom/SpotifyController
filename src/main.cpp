@@ -281,7 +281,7 @@ void updateScreen() {
       current_playing_state = playing_state;
       Serial.println("La cancion y el estado cambiaron");
       updateSongInfo(doc);
-      updatePlayPauseButton();
+      //updatePlayPauseButton();
     }
 
     if (current_song_id != song_id) {
@@ -293,7 +293,7 @@ void updateScreen() {
     if (current_playing_state != playing_state) {
       current_playing_state = playing_state;
       Serial.println("El estado cambio");
-      updatePlayPauseButton();
+      //updatePlayPauseButton();
     }
   } else if (httpCode == 401) {
     saveAccessToken(getNewAccessToken());
@@ -464,7 +464,7 @@ void drawMainGui(void) {
   lv_obj_set_style_text_color(btn_label, lv_color_hex(0xb3b3b3), 0);
   lv_obj_center(btn_label);
 
-
+/*
   play_pause_button = lv_button_create(lv_screen_active());
   lv_obj_add_event_cb(play_pause_button, event_handler_play_pause_button, LV_EVENT_ALL, NULL);
   lv_obj_align(play_pause_button, LV_ALIGN_BOTTOM_MID, 0, -10);
@@ -479,7 +479,7 @@ void drawMainGui(void) {
   lv_label_set_text(btn_label, LV_SYMBOL_PLAY);
   lv_obj_set_style_text_color(btn_label, lv_color_hex(0x000000), 0);
   lv_obj_center(btn_label);
-
+*/
 
   lv_obj_t * next_button = lv_button_create(lv_screen_active());
   lv_obj_add_event_cb(next_button, event_handler_next_button, LV_EVENT_ALL, NULL);

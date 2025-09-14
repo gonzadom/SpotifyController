@@ -62,7 +62,7 @@ bool getFile(String url, String filename) {
           size_t size = stream->available();
 
           if (size) {
-            // Read up to 128 bytes
+            // Read up to 2048 bytes
             int c = stream->readBytes(buff, min(size, buff_size));
 
             // Write it to file
