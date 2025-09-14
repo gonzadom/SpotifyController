@@ -46,7 +46,12 @@ bool getFile(String url, String filename) {
         int len = total;
 
         // Create buffer for read
-        uint8_t buff[1024] = { 0 }; //original era 128
+        const size_t buff_size = 2048;
+        uint8_t *buff = (uint8_t *)calloc(buff_size, sizeof(uint8_t)); //original era 128
+        if (!buff) {
+          Serial.print("Memory error, could not allocate buffer.\n");
+          return 0;
+        }
 
         // Get tcp stream
         WiFiClient * stream = http.getStreamPtr();
@@ -58,7 +63,7 @@ bool getFile(String url, String filename) {
 
           if (size) {
             // Read up to 128 bytes
-            int c = stream->readBytes(buff, ((size > sizeof(buff)) ? sizeof(buff) : size));
+            int c = stream->readBytes(buff, min(size, buff_size));
 
             // Write it to file
             f.write(buff, c);
@@ -70,6 +75,9 @@ bool getFile(String url, String filename) {
           }
           yield();
         }
+
+        free(buff);
+
         Serial.println();
         Serial.print("[HTTP] connection closed or file end.\n");
       }
