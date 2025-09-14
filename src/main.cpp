@@ -68,6 +68,9 @@ uint32_t draw_buf[DRAW_BUF_SIZE / 4];
 lv_obj_t * song_title;
 lv_obj_t * artist;
 lv_obj_t * play_pause_button;
+
+lv_obj_t *progress_bar;
+
 String current_song_id = "";
 String current_playing_state = "";
 String artworkURL = "";
@@ -219,7 +222,7 @@ void downloadImage(const char* url) {
 
   getFile(url, "/albumArt.jpg");
 
-  TJpgDec.drawFsJpg(85, 5, "/albumArt.jpg");
+  TJpgDec.drawFsJpg(5, 5, "/albumArt.jpg");
 }
 
 void updateSongInfo(JsonDocument doc){
@@ -434,25 +437,38 @@ void drawMainGui(void) {
   song_title = lv_label_create(lv_screen_active());
   lv_label_set_long_mode(song_title, LV_LABEL_LONG_SCROLL_CIRCULAR); // si el nombre es mas largo que el ancho de la pantalla va rotando el string para que se vea completo
   lv_label_set_text(song_title, "Cancion: Desconocida");
-  lv_obj_set_width(song_title, SCREEN_HEIGHT); //El ancho que puede ocupar el texto es igual al alto de la pantalla
-  lv_obj_set_style_text_align(song_title, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(song_title, LV_ALIGN_CENTER, 0, 45);
+  lv_obj_set_width(song_title, SCREEN_HEIGHT-10); //El ancho que puede ocupar el texto es igual al alto de la pantalla
+  lv_obj_set_style_text_align(song_title, LV_TEXT_ALIGN_LEFT, 0);
+  lv_obj_align(song_title, LV_ALIGN_CENTER, 0, 85);
   lv_obj_set_style_text_color(song_title, lv_color_hex(0xFFFFFF), 0);
 
   artist = lv_label_create(lv_screen_active());
   lv_label_set_long_mode(artist, LV_LABEL_LONG_SCROLL_CIRCULAR); // si el nombre es mas largo que el ancho de la pantalla va rotando el string para que se vea completo
   lv_label_set_text(artist, "Artista: Desconocido");
-  lv_obj_set_width(artist, SCREEN_HEIGHT); //El ancho que puede ocupar el texto es igual al alto de la pantalla
-  lv_obj_set_style_text_align(artist, LV_TEXT_ALIGN_CENTER, 0);
-  lv_obj_align(artist, LV_ALIGN_CENTER, 0, 65);
+  lv_obj_set_width(artist, SCREEN_HEIGHT-10); //El ancho que puede ocupar el texto es igual al alto de la pantalla
+  lv_obj_set_style_text_align(artist, LV_TEXT_ALIGN_LEFT, 0);
+  lv_obj_align(artist, LV_ALIGN_CENTER, 0, 105);
   lv_obj_set_style_text_color(artist, lv_color_hex(0xb3b3b3), 0);
 
+  progress_bar = lv_bar_create(lv_screen_active());
+  lv_bar_set_start_value(progress_bar, 0, LV_ANIM_OFF);
+  lv_obj_set_height(progress_bar, 4);
+  lv_obj_set_width(progress_bar, lv_pct(70));
+  lv_obj_set_x(progress_bar, 0);
+  lv_obj_set_y(progress_bar, -60);
+  lv_obj_set_align(progress_bar, LV_ALIGN_BOTTOM_MID);
+  lv_obj_set_style_bg_color(progress_bar, lv_color_hex(0x535353), LV_PART_MAIN | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(progress_bar, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+  
+  lv_obj_set_style_bg_color(progress_bar, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
+  lv_obj_set_style_bg_opa(progress_bar, 255, LV_PART_INDICATOR | LV_STATE_DEFAULT);
+  lv_bar_set_value(progress_bar, 0, LV_ANIM_ON);
   
   lv_obj_t * btn_label;
 
   lv_obj_t * prev_button = lv_button_create(lv_screen_active());
   lv_obj_add_event_cb(prev_button, event_handler_prev_button, LV_EVENT_ALL, NULL);
-  lv_obj_align(prev_button, LV_ALIGN_BOTTOM_MID, -70, -10);
+  lv_obj_align(prev_button, LV_ALIGN_CENTER, 25, 0);
   lv_obj_remove_flag(prev_button, LV_OBJ_FLAG_PRESS_LOCK);
   lv_obj_set_style_bg_opa(prev_button, LV_OPA_TRANSP, 0);
   lv_obj_set_size(prev_button, 35, 35);
@@ -483,7 +499,7 @@ void drawMainGui(void) {
 
   lv_obj_t * next_button = lv_button_create(lv_screen_active());
   lv_obj_add_event_cb(next_button, event_handler_next_button, LV_EVENT_ALL, NULL);
-  lv_obj_align(next_button, LV_ALIGN_BOTTOM_MID, 70, -10);
+  lv_obj_align(next_button, LV_ALIGN_CENTER, 135, 0);
   lv_obj_remove_flag(next_button, LV_OBJ_FLAG_PRESS_LOCK);
   lv_obj_set_style_bg_opa(next_button, LV_OPA_TRANSP, 0);
   lv_obj_set_size(next_button, 35, 35);
