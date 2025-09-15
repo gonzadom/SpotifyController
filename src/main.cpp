@@ -253,7 +253,7 @@ void updatePlayPauseButton() {
   lv_obj_center(btn_label);
 }
 
-void updateScreen() {
+static void updateScreen(lv_timer_t *timer) {
   HTTPClient http;
   http.begin("https://api.spotify.com/v1/me/player/currently-playing");
   http.addHeader("Authorization", "Bearer " + readAccessToken());
@@ -301,7 +301,7 @@ void updateScreen() {
   } else if (httpCode == 401) {
     saveAccessToken(getNewAccessToken());
     http.end();
-    updateScreen();
+    updateScreen(NULL);
   } else if (httpCode == 204) {
     Serial.println("No hay reproducción activa en este momento.");
   } else {
@@ -383,7 +383,7 @@ static void event_handler_prev_button(lv_event_t * e) {
   if(code == LV_EVENT_CLICKED) {
     LV_LOG_USER("Previous button pressed");
     prevSong();
-    updateScreen();
+    updateScreen(NULL);
   }
 }
 
@@ -392,7 +392,7 @@ static void event_handler_play_pause_button(lv_event_t * e) {
   if(code == LV_EVENT_CLICKED) {
     LV_LOG_USER("Play-Pause button pressed");
     playAndPause();
-    updateScreen();
+    updateScreen(NULL);
   }
 }
 
@@ -401,7 +401,7 @@ static void event_handler_next_button(lv_event_t * e) {
   if(code == LV_EVENT_CLICKED) {
     LV_LOG_USER("Next button pressed");
     nextSong();
-    updateScreen();
+    updateScreen(NULL);
   }
 }
 
@@ -510,9 +510,6 @@ void drawMainGui(void) {
   lv_label_set_text(btn_label, LV_SYMBOL_NEXT);
   lv_obj_set_style_text_color(btn_label, lv_color_hex(0xb3b3b3), 0);
   lv_obj_center(btn_label);
-
-
-  lv_task_handler(); //Espero a que LVGL termine de dibujar todo para que no tape el artwork del disco al inicio
 }
 
 void setup() {
@@ -551,25 +548,12 @@ void setup() {
 
   // Function to draw the GUI (text, buttons and sliders)
   drawMainGui();
+
+  lv_timer_create(updateScreen, 5000, NULL);
 }
 
-unsigned long lastTick = 0;
-unsigned long lastUpdate = 0;
 void loop() {
-  unsigned long currentMillis = millis();
-
-    // Incrementa el tick de LVGL cada 5 ms
-    if (currentMillis - lastTick >= 5) {
-        lv_tick_inc(5);
-        lastTick = currentMillis;
-    }
-
-    // Actualiza la pantalla cada 5000 ms (5 segundos)
-    if (currentMillis - lastUpdate >= 5000) {
-        updateScreen();
-        lastUpdate = currentMillis;
-    }
-
-    // Procesa las tareas de LVGL
-    lv_task_handler();
+  lv_task_handler();  // let the GUI do its work
+  lv_tick_inc(5);     // tell LVGL how much time has passed
+  delay(5);           // let this time pass
 }
