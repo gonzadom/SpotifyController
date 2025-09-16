@@ -10,6 +10,11 @@
 #include <FS.h>
 #include "secrets.h"
 
+#include <iostream>
+#include <iomanip>   // Para setw y setfill
+#include <sstream>   // Para ostringstream
+#include <string>
+
 //========= Touch Screen =========
 // Touchscreen pins
 #define XPT2046_IRQ 36   // T_IRQ
@@ -68,6 +73,9 @@ uint32_t draw_buf[DRAW_BUF_SIZE / 4];
 lv_obj_t * song_title;
 lv_obj_t * artist;
 lv_obj_t * play_pause_button;
+
+lv_obj_t *progress;
+lv_obj_t *duration;
 
 lv_obj_t *progress_bar;
 
@@ -228,6 +236,18 @@ void downloadImage(const char* url) {
   TJpgDec.drawFsJpg(5, 5, "/albumArt.jpg");
 }
 
+std::string convertirMSaMinutosSegundos(long ms) {
+  long totalSegundos = ms / 1000;
+  int minutos = totalSegundos / 60;
+  int segundos = totalSegundos % 60;
+
+  std::ostringstream oss;
+  oss << std::setfill('0') << std::setw(2) << minutos << ":"
+      << std::setfill('0') << std::setw(2) << segundos;
+
+  return oss.str();
+}
+
 void updateSongInfo(JsonDocument doc){
 
   const char* imageUrl = doc["item"]["album"]["images"][1]["url"];
@@ -244,6 +264,8 @@ void updateSongInfo(JsonDocument doc){
   noInterrupts();
   progress_ms = doc["progress_ms"];
   duration_ms = doc["item"]["duration_ms"];
+  lv_label_set_text(progress, convertirMSaMinutosSegundos(progress_ms).c_str());
+  lv_label_set_text(duration, convertirMSaMinutosSegundos(duration_ms).c_str());
   interrupts();
 }
 
@@ -262,8 +284,15 @@ void updatePlayPauseButton() {
 }
 
 static void updateProgressBar(lv_timer_t *timer) {
+  if (progress_ms == 0 && duration_ms == 1)
+    return;
+
+  if (current_playing_state == "false")
+    return;
+
   noInterrupts();
-  progress_ms += 1;
+  progress_ms += 1000;
+  lv_label_set_text(progress, convertirMSaMinutosSegundos(progress_ms).c_str());
   int32_t porcentage = (progress_ms * 100) / duration_ms;
   lv_bar_set_value(progress_bar, porcentage, LV_ANIM_ON);
   interrupts();
@@ -289,7 +318,7 @@ static void updateScreen(lv_timer_t *timer) {
 
     noInterrupts();
     progress_ms = doc["progress_ms"];
-    duration_ms = doc["item"]["duration_ms"];
+    lv_label_set_text(progress, convertirMSaMinutosSegundos(progress_ms).c_str());
     interrupts();
 
     const char *song_id = doc["item"]["id"];
@@ -471,10 +500,17 @@ void drawMainGui(void) {
   lv_obj_align(artist, LV_ALIGN_CENTER, 0, 105);
   lv_obj_set_style_text_color(artist, lv_color_hex(0xb3b3b3), 0);
 
+  progress = lv_label_create(lv_screen_active());
+  lv_label_set_text(progress, "00:00");
+  lv_obj_set_width(progress, lv_pct(15)); //El ancho que puede ocupar el texto es igual al alto de la pantalla
+  lv_obj_set_style_text_align(progress, LV_TEXT_ALIGN_LEFT, 0);
+  lv_obj_align(progress, LV_ALIGN_BOTTOM_MID, -120, -55);
+  lv_obj_set_style_text_color(progress, lv_color_hex(0xb3b3b3), 0);
+
   progress_bar = lv_bar_create(lv_screen_active());
   lv_bar_set_start_value(progress_bar, 0, LV_ANIM_OFF);
   lv_obj_set_height(progress_bar, 4);
-  lv_obj_set_width(progress_bar, lv_pct(70));
+  lv_obj_set_width(progress_bar, lv_pct(60));
   lv_obj_set_x(progress_bar, 0);
   lv_obj_set_y(progress_bar, -60);
   lv_obj_set_align(progress_bar, LV_ALIGN_BOTTOM_MID);
@@ -484,6 +520,13 @@ void drawMainGui(void) {
   lv_obj_set_style_bg_color(progress_bar, lv_color_hex(0xFFFFFF), LV_PART_INDICATOR | LV_STATE_DEFAULT);
   lv_obj_set_style_bg_opa(progress_bar, 255, LV_PART_INDICATOR | LV_STATE_DEFAULT);
   lv_bar_set_value(progress_bar, 0, LV_ANIM_ON);
+
+  duration = lv_label_create(lv_screen_active());
+  lv_label_set_text(duration, "00:00");
+  lv_obj_set_width(duration, lv_pct(15)); //El ancho que puede ocupar el texto es igual al alto de la pantalla
+  lv_obj_set_style_text_align(duration, LV_TEXT_ALIGN_LEFT, 0);
+  lv_obj_align(duration, LV_ALIGN_BOTTOM_MID, 135, -55);
+  lv_obj_set_style_text_color(duration, lv_color_hex(0xb3b3b3), 0);
   
   lv_obj_t * btn_label;
 
