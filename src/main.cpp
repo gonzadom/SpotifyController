@@ -10,6 +10,8 @@
 #include <FS.h>
 #include "secrets.h"
 
+#include "RGBLedController.h"
+
 #include <iostream>
 #include <iomanip>   // Para setw y setfill
 #include <sstream>   // Para ostringstream
@@ -86,43 +88,16 @@ String artworkURL = "";
 volatile int32_t progress_ms = 0;
 volatile int32_t duration_ms = 1;
 
-//========= Back Led =========
-#define CYD_LED_BLUE 17
-#define CYD_LED_RED 4
-#define CYD_LED_GREEN 16
+String accessToken = "";
 
-void setLedRed() {
-  digitalWrite(CYD_LED_RED, LOW); 
-  digitalWrite(CYD_LED_GREEN, HIGH);
-  digitalWrite(CYD_LED_BLUE, HIGH);
-}
-
-void setLedGreen() {
-  digitalWrite(CYD_LED_RED, HIGH); 
-  digitalWrite(CYD_LED_GREEN, LOW);
-  digitalWrite(CYD_LED_BLUE, HIGH);
-}
-
-void turnOffLed() {
-  digitalWrite(CYD_LED_RED, HIGH);
-  digitalWrite(CYD_LED_GREEN, HIGH);
-  digitalWrite(CYD_LED_BLUE, HIGH);
-}
-
-void setUpLed() {
-  pinMode(CYD_LED_RED, OUTPUT);
-  pinMode(CYD_LED_GREEN, OUTPUT);
-  pinMode(CYD_LED_BLUE, OUTPUT);
-
-  turnOffLed();
-}
+RGBLedController ledController;
 
 //========= WIFI =========
 
 void connectToWifi(const char* ssid, const char* password) {
   Serial.println("Conectando al WiFi...");
 
-  setLedRed();
+  ledController.setLedRed();
 
   // Connect to Wi-Fi network
   WiFi.begin(ssid, password);
@@ -137,7 +112,7 @@ void connectToWifi(const char* ssid, const char* password) {
     Serial.println("Conectando...");
   }
 
-  setLedGreen();
+  ledController.setLedGreen();
 
   // Once connected, print the local IP address
   Serial.println("Conectado al WiFi!");
@@ -150,7 +125,7 @@ void connectToWifi(const char* ssid, const char* password) {
 
   delay(1000);
 
-  turnOffLed();
+  ledController.turnOffLed();
 }
 
 // If logging is enabled, it will inform the user about what is happening in the library
@@ -301,7 +276,7 @@ static void updateProgressBar(lv_timer_t *timer) {
 static void updateScreen(lv_timer_t *timer) {
   HTTPClient http;
   http.begin("https://api.spotify.com/v1/me/player/currently-playing");
-  http.addHeader("Authorization", "Bearer " + readAccessToken());
+  http.addHeader("Authorization", "Bearer " + accessToken);
 
   int httpCode = http.GET();
 
@@ -371,7 +346,7 @@ void playAndPause() {
     http.begin("https://api.spotify.com/v1/me/player/play");  // URL para siguiente canción
   }
 
-  http.addHeader("Authorization", "Bearer " + readAccessToken());  // Cabecera con el token de acceso
+  http.addHeader("Authorization", "Bearer " + accessToken);  // Cabecera con el token de acceso
   http.addHeader("Content-Length", "0"); // Agregado a la cabecera para que spotify acepte la solicitud
 
   int httpCode = http.PUT("");  // Enviamos la petición POST (vacía)
@@ -391,7 +366,7 @@ void playAndPause() {
 void nextSong() {
   HTTPClient http;
   http.begin("https://api.spotify.com/v1/me/player/next");  // URL para siguiente canción
-  http.addHeader("Authorization", "Bearer " + readAccessToken());  // Cabecera con el token de acceso
+  http.addHeader("Authorization", "Bearer " + accessToken);  // Cabecera con el token de acceso
   http.addHeader("Content-Length", "0"); // Agregado a la cabecera para que spotify acepte la solicitud
   
   int httpCode = http.POST("");  // Enviamos la petición POST (vacía)
@@ -411,7 +386,7 @@ void nextSong() {
 void prevSong() {
   HTTPClient http;
   http.begin("https://api.spotify.com/v1/me/player/previous");  // URL para siguiente canción
-  http.addHeader("Authorization", "Bearer " + readAccessToken());  // Cabecera con el token de acceso
+  http.addHeader("Authorization", "Bearer " + accessToken);  // Cabecera con el token de acceso
   http.addHeader("Content-Length", "0"); // Agregado a la cabecera para que spotify acepte la solicitud
   
   int httpCode = http.POST("");  // Enviamos la petición POST (vacía)
@@ -580,7 +555,7 @@ void setup() {
   String LVGL_Arduino = String("LVGL Library Version: ") + lv_version_major() + "." + lv_version_minor() + "." + lv_version_patch();
   Serial.println(LVGL_Arduino);
   
-  setUpLed();
+  ledController = RGBLedController();
 
   connectToWifi(ssid, password);
 
@@ -613,6 +588,8 @@ void setup() {
 
   lv_timer_create(updateScreen, 5000, NULL);
   lv_timer_create(updateProgressBar, 1000, NULL);
+
+  accessToken = readAccessToken();
 }
 
 void loop() {
