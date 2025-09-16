@@ -75,6 +75,9 @@ String current_song_id = "";
 String current_playing_state = "";
 String artworkURL = "";
 
+volatile int32_t progress_ms = 0;
+volatile int32_t duration_ms = 1;
+
 //========= Back Led =========
 #define CYD_LED_BLUE 17
 #define CYD_LED_RED 4
@@ -237,6 +240,11 @@ void updateSongInfo(JsonDocument doc){
   Serial.println("Artista: " + String(artist_name));
   lv_label_set_text(song_title, String(track_name).c_str());
   lv_label_set_text(artist, String(artist_name).c_str());
+
+  noInterrupts();
+  progress_ms = doc["progress_ms"];
+  duration_ms = doc["item"]["duration_ms"];
+  interrupts();
 }
 
 void updatePlayPauseButton() {
@@ -251,6 +259,14 @@ void updatePlayPauseButton() {
   }
   lv_obj_set_style_text_color(btn_label, lv_color_hex(0x000000), 0);
   lv_obj_center(btn_label);
+}
+
+static void updateProgressBar(lv_timer_t *timer) {
+  noInterrupts();
+  progress_ms += 1;
+  int32_t porcentage = (progress_ms * 100) / duration_ms;
+  lv_bar_set_value(progress_bar, porcentage, LV_ANIM_ON);
+  interrupts();
 }
 
 static void updateScreen(lv_timer_t *timer) {
@@ -271,6 +287,11 @@ static void updateScreen(lv_timer_t *timer) {
       return;
     }
 
+    noInterrupts();
+    progress_ms = doc["progress_ms"];
+    duration_ms = doc["item"]["duration_ms"];
+    interrupts();
+
     const char *song_id = doc["item"]["id"];
     String playing_state = doc["is_playing"];
     if (current_song_id == song_id  && current_playing_state == playing_state) {
@@ -284,7 +305,7 @@ static void updateScreen(lv_timer_t *timer) {
       current_playing_state = playing_state;
       Serial.println("La cancion y el estado cambiaron");
       updateSongInfo(doc);
-      //updatePlayPauseButton();
+      updatePlayPauseButton();
     }
 
     if (current_song_id != song_id) {
@@ -296,7 +317,7 @@ static void updateScreen(lv_timer_t *timer) {
     if (current_playing_state != playing_state) {
       current_playing_state = playing_state;
       Serial.println("El estado cambio");
-      //updatePlayPauseButton();
+      updatePlayPauseButton();
     }
   } else if (httpCode == 401) {
     saveAccessToken(getNewAccessToken());
@@ -480,10 +501,9 @@ void drawMainGui(void) {
   lv_obj_set_style_text_color(btn_label, lv_color_hex(0xb3b3b3), 0);
   lv_obj_center(btn_label);
 
-/*
   play_pause_button = lv_button_create(lv_screen_active());
   lv_obj_add_event_cb(play_pause_button, event_handler_play_pause_button, LV_EVENT_ALL, NULL);
-  lv_obj_align(play_pause_button, LV_ALIGN_BOTTOM_MID, 0, -10);
+  lv_obj_align(play_pause_button, LV_ALIGN_CENTER, 80, 0);
   lv_obj_remove_flag(play_pause_button, LV_OBJ_FLAG_PRESS_LOCK);
   lv_obj_set_style_bg_color(play_pause_button, lv_color_hex(0xffffff), 0);
   lv_obj_set_style_bg_opa(play_pause_button, LV_OPA_COVER, 0);
@@ -495,7 +515,6 @@ void drawMainGui(void) {
   lv_label_set_text(btn_label, LV_SYMBOL_PLAY);
   lv_obj_set_style_text_color(btn_label, lv_color_hex(0x000000), 0);
   lv_obj_center(btn_label);
-*/
 
   lv_obj_t * next_button = lv_button_create(lv_screen_active());
   lv_obj_add_event_cb(next_button, event_handler_next_button, LV_EVENT_ALL, NULL);
@@ -550,6 +569,7 @@ void setup() {
   drawMainGui();
 
   lv_timer_create(updateScreen, 5000, NULL);
+  lv_timer_create(updateProgressBar, 1000, NULL);
 }
 
 void loop() {
