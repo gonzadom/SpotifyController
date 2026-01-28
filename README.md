@@ -1,4 +1,4 @@
-# Spotify Controler
+# Spotify Controller
 
 ## Descripcion
 Un projecto que hacia tiempo queria realizar.
