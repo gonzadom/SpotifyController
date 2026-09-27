@@ -5,12 +5,13 @@
 #include <XPT2046_Touchscreen.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <Preferences.h>
 #include <TJpg_Decoder.h>
 #include <FS.h>
-#include "secrets.h"
 
 #include "RGBLedController.h"
+#include "Config.h"
+#include "SpotifyAuth.h"
+#include "ConfigPortal.h"
 
 #include <iostream>
 #include <iomanip>   // Para setw y setfill
@@ -85,31 +86,94 @@ String current_song_id = "";
 String current_playing_state = "";
 String artworkURL = "";
 
-volatile int32_t progress_ms = 0;
-volatile int32_t duration_ms = 1;
+int32_t progress_ms = 0;
+int32_t duration_ms = 0;
 
 String accessToken = "";
 
 RGBLedController ledController;
 
+//========= Configuracion =========
+
+// Boton BOOT de la CYD: mantenerlo apretado al arrancar entra a la configuracion
+#define BOOT_BUTTON 0
+#define WIFI_TIMEOUT_MS 20000
+
+AppConfig config;
+ConfigPortal portal(config);
+
+// Pantalla simple con un titulo, un texto y opcionalmente un QR
+// Nota: la fuente de LVGL no tiene tildes, por eso los textos van sin acentos
+void showInfoScreen(const char* title, const String& text, const String& qrData = "") {
+  lv_obj_t * screen = lv_screen_active();
+  lv_obj_clean(screen);
+  lv_obj_set_style_bg_color(screen, lv_color_hex(0x383b39), 0);
+
+  int32_t textX = 10;
+  if (qrData.length() > 0) {
+    lv_obj_t * qr = lv_qrcode_create(screen);
+    lv_qrcode_set_size(qr, 130);
+    lv_qrcode_set_dark_color(qr, lv_color_black());
+    lv_qrcode_set_light_color(qr, lv_color_white());
+    lv_qrcode_update(qr, qrData.c_str(), qrData.length());
+    lv_obj_set_style_border_color(qr, lv_color_white(), 0);
+    lv_obj_set_style_border_width(qr, 5, 0);
+    lv_obj_align(qr, LV_ALIGN_LEFT_MID, 10, 0);
+    textX = 160;
+  }
+
+  lv_obj_t * title_label = lv_label_create(screen);
+  lv_label_set_text(title_label, title);
+  lv_obj_set_style_text_color(title_label, lv_color_hex(0x1db954), 0);
+  lv_obj_set_pos(title_label, textX, 20);
+
+  lv_obj_t * text_label = lv_label_create(screen);
+  lv_label_set_long_mode(text_label, LV_LABEL_LONG_WRAP);
+  lv_label_set_text(text_label, text.c_str());
+  lv_obj_set_width(text_label, SCREEN_HEIGHT - textX - 10);
+  lv_obj_set_style_text_color(text_label, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_set_pos(text_label, textX, 50);
+
+  // Dibujar ya, antes de que empiecen operaciones que bloquean (WiFi, HTTP)
+  lv_timer_handler();
+}
+
+// Crea la red WiFi propia de la CYD para configurarla desde el celu
+void startSetupMode() {
+  // QR con el formato estandar de WiFi: la camara del celu ofrece conectarse directo
+  String wifiQr = String("WIFI:T:nopass;S:") + ConfigPortal::AP_SSID + ";;";
+  showInfoScreen("Configuracion",
+    "1. Escanea el QR o conectate a la red WiFi \"" + String(ConfigPortal::AP_SSID) + "\"\n\n"
+    "2. Se abre la pagina de configuracion (si no, entra a 192.168.4.1)", wifiQr);
+
+  ledController.setLedRed();
+  portal.startAccessPoint();
+}
+
 //========= WIFI =========
 
-void connectToWifi(const char* ssid, const char* password) {
+// Devuelve false si no pudo conectar o si se apreto BOOT para ir a la configuracion
+bool connectToWifi(const AppConfig& cfg) {
   Serial.println("Conectando al WiFi...");
+  showInfoScreen("Conectando...", "Red: " + cfg.wifiSsid + "\n\nMantene apretado BOOT para entrar a la configuracion");
 
   ledController.setLedRed();
 
-  // Connect to Wi-Fi network
-  WiFi.begin(ssid, password);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(cfg.wifiSsid.c_str(), cfg.wifiPassword.c_str());
 
-  // Wait for the connection
-  int cicles = 0;
+  unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED) {
-    if (cicles == 10)
-      ESP.restart();
-    delay(1000);
-    cicles++;
-    Serial.println("Conectando...");
+    if (digitalRead(BOOT_BUTTON) == LOW) {
+      Serial.println("BOOT apretado, entrando a la configuracion");
+      return false;
+    }
+    if (millis() - start > WIFI_TIMEOUT_MS) {
+      Serial.println("No se pudo conectar al WiFi");
+      return false;
+    }
+    lv_timer_handler();
+    delay(100);
   }
 
   ledController.setLedGreen();
@@ -126,6 +190,7 @@ void connectToWifi(const char* ssid, const char* password) {
   delay(1000);
 
   ledController.turnOffLed();
+  return true;
 }
 
 // If logging is enabled, it will inform the user about what is happening in the library
@@ -152,63 +217,42 @@ bool tft_output(int16_t x, int16_t y, uint16_t w, uint16_t h, uint16_t* bitmap)
   return 1;
 }
 
-//========= Access Token =========
-Preferences preferences;
-
-bool tokenSaved() {
-  String token = preferences.getString("access_token", "");
-  return token.length() > 0;  // Retorna true si el token no está vacío
-}
-
-void saveAccessToken(String token) {
-  preferences.putString("access_token", token);
-  Serial.println("Access Token guardado correctamente.");
-}
-
-String readAccessToken() {
-  return preferences.getString("access_token", "");
-}
-
-String getNewAccessToken() {
-  HTTPClient http;
-  http.begin("https://accounts.spotify.com/api/token");
-  http.addHeader("Content-Type", "application/x-www-form-urlencoded");
-  String body = "grant_type=refresh_token&refresh_token=" + refreshToken + "&client_id=" + clientId + "&client_secret=" + clientSecret;
-
-  int httpCode = http.POST(body);  // Realiza la petición POST
-
-  if (httpCode != 200) {
-    Serial.println("Error al refrescar el token");
-    return "";
-  }
-
-  String response = http.getString();
-
-  JsonDocument doc;
-  deserializeJson(doc, response);
-    
-  Serial.println("Token refrescado");
-  return doc["access_token"];
-
-  http.end();
-}
-
+// Dibuja la tapa del album. Si la descarga falla, artworkURL no cambia y se reintenta en el proximo ciclo
 void downloadImage(const char* url) {
 
-  if (String(url) == artworkURL) {
-    Serial.println("Arte de tapa ya descargado");
+  // Archivos locales o anuncios pueden no tener imagen: se borra la anterior
+  if (url == nullptr) {
+    if (artworkURL.length() > 0) {
+      artworkURL = "";
+      lv_obj_invalidate(lv_screen_active()); // LVGL redibuja toda la pantalla y tapa la imagen vieja
+    }
     return;
   }
-  
-  artworkURL = url;
-  
+
+  if (artworkURL == url) {
+    return;
+  }
+
   if(SPIFFS.exists("/albumArt.jpg") == true) {
     SPIFFS.remove("/albumArt.jpg");
   }
 
-  getFile(url, "/albumArt.jpg");
+  if (!getFile(url, "/albumArt.jpg")) {
+    Serial.println("No se pudo descargar el arte de tapa");
+    return;
+  }
 
+  artworkURL = url;
   TJpgDec.drawFsJpg(5, 5, "/albumArt.jpg");
+}
+
+// Spotify manda las imagenes de mayor a menor (640, 300, 64). Se usa la de 300 si esta
+const char* getArtworkUrl(JsonDocument& doc) {
+  JsonArray images = doc["item"]["album"]["images"];
+  if (images.size() == 0) {
+    return nullptr;
+  }
+  return images[images.size() > 1 ? 1 : 0]["url"];
 }
 
 std::string convertirMSaMinutosSegundos(long ms) {
@@ -223,25 +267,33 @@ std::string convertirMSaMinutosSegundos(long ms) {
   return oss.str();
 }
 
-void updateSongInfo(JsonDocument doc){
+void refreshProgress() {
+  if (duration_ms > 0 && progress_ms > duration_ms) {
+    progress_ms = duration_ms;
+  }
 
-  const char* imageUrl = doc["item"]["album"]["images"][1]["url"];
-  downloadImage(imageUrl);
+  lv_label_set_text(progress, convertirMSaMinutosSegundos(progress_ms).c_str());
 
-  const char* track_name = doc["item"]["name"];
-  const char* artist_name = doc["item"]["artists"][0]["name"];
+  int32_t porcentage = duration_ms > 0 ? (progress_ms * 100) / duration_ms : 0;
+  lv_bar_set_value(progress_bar, porcentage, LV_ANIM_ON);
+}
+
+void updateSongInfo(JsonDocument& doc) {
+  // "item" viene en null con anuncios y podcasts, y con archivos locales faltan campos
+  JsonVariant item = doc["item"];
+  const char* default_name = doc["currently_playing_type"] == "ad" ? "Anuncio" : "Desconocida";
+  const char* track_name = item["name"] | default_name;
+  const char* artist_name = item["artists"][0]["name"] | "";
+
   Serial.println("Canción actual:");
   Serial.println("Nombre: " + String(track_name));
   Serial.println("Artista: " + String(artist_name));
-  lv_label_set_text(song_title, String(track_name).c_str());
-  lv_label_set_text(artist, String(artist_name).c_str());
+  lv_label_set_text(song_title, track_name);
+  lv_label_set_text(artist, artist_name);
 
-  noInterrupts();
-  progress_ms = doc["progress_ms"];
-  duration_ms = doc["item"]["duration_ms"];
-  lv_label_set_text(progress, convertirMSaMinutosSegundos(progress_ms).c_str());
+  duration_ms = item["duration_ms"] | 0;
   lv_label_set_text(duration, convertirMSaMinutosSegundos(duration_ms).c_str());
-  interrupts();
+  refreshProgress();
 }
 
 void updatePlayPauseButton() {
@@ -259,18 +311,11 @@ void updatePlayPauseButton() {
 }
 
 static void updateProgressBar(lv_timer_t *timer) {
-  if (progress_ms == 0 && duration_ms == 1)
+  if (duration_ms == 0 || current_playing_state != "true")
     return;
 
-  if (current_playing_state == "false")
-    return;
-
-  noInterrupts();
   progress_ms += 1000;
-  lv_label_set_text(progress, convertirMSaMinutosSegundos(progress_ms).c_str());
-  int32_t porcentage = (progress_ms * 100) / duration_ms;
-  lv_bar_set_value(progress_bar, porcentage, LV_ANIM_ON);
-  interrupts();
+  refreshProgress();
 }
 
 static void updateScreen(lv_timer_t *timer) {
@@ -288,45 +333,39 @@ static void updateScreen(lv_timer_t *timer) {
 
     if (error) {
       Serial.println("Error al parsear el JSON: " + String(error.c_str()));
-      return;
-    }
-
-    noInterrupts();
-    progress_ms = doc["progress_ms"];
-    lv_label_set_text(progress, convertirMSaMinutosSegundos(progress_ms).c_str());
-    interrupts();
-
-    const char *song_id = doc["item"]["id"];
-    String playing_state = doc["is_playing"];
-    if (current_song_id == song_id  && current_playing_state == playing_state) {
       http.end();
-      Serial.println("La cancion y el estado no cambiaron");
       return;
     }
 
-    if (current_song_id != song_id  && current_playing_state != playing_state) {
-      current_song_id = song_id;
-      current_playing_state = playing_state;
-      Serial.println("La cancion y el estado cambiaron");
-      updateSongInfo(doc);
-      updatePlayPauseButton();
-    }
+    progress_ms = doc["progress_ms"] | 0;
 
-    if (current_song_id != song_id) {
-      current_song_id = song_id;
+    // Con archivos locales el id viene en null, la uri siempre esta
+    String song_id = doc["item"]["uri"] | "";
+    String playing_state = doc["is_playing"].as<bool>() ? "true" : "false";
+
+    bool songChanged = song_id != current_song_id;
+    bool stateChanged = playing_state != current_playing_state;
+    current_song_id = song_id;
+    current_playing_state = playing_state;
+
+    if (songChanged) {
       Serial.println("La cancion cambio");
       updateSongInfo(doc);
+    } else {
+      refreshProgress();
     }
-    
-    if (current_playing_state != playing_state) {
-      current_playing_state = playing_state;
+
+    if (stateChanged) {
       Serial.println("El estado cambio");
       updatePlayPauseButton();
     }
+
+    // Se llama siempre para reintentar si la descarga anterior fallo (no descarga dos veces la misma)
+    downloadImage(getArtworkUrl(doc));
   } else if (httpCode == 401) {
-    saveAccessToken(getNewAccessToken());
-    http.end();
-    updateScreen(NULL);
+    // El access token dura 1 hora. Se pide uno nuevo y el proximo ciclo del timer reintenta
+    Serial.println("Access token vencido");
+    SpotifyAuth::refreshAccessToken(config, accessToken);
   } else if (httpCode == 204) {
     Serial.println("No hay reproducción activa en este momento.");
   } else {
@@ -433,6 +472,8 @@ static void event_handler_next_button(lv_event_t * e) {
 void screenSetUp() {
   // Start LVGL
   lv_init();
+  // LVGL mide el tiempo con millis(), asi no se atrasa cuando una peticion HTTP bloquea el loop
+  lv_tick_set_cb([]() -> uint32_t { return millis(); });
   // Register print function for debugging
   lv_log_register_print_cb(log_print);
 
@@ -555,18 +596,8 @@ void setup() {
   String LVGL_Arduino = String("LVGL Library Version: ") + lv_version_major() + "." + lv_version_minor() + "." + lv_version_patch();
   Serial.println(LVGL_Arduino);
   
+  pinMode(BOOT_BUTTON, INPUT_PULLUP);
   ledController = RGBLedController();
-
-  connectToWifi(ssid, password);
-
-  preferences.begin("spotify", false);
-
-  if (!tokenSaved()) {
-    Serial.println("No se encontró un Access Token. Generando y guardando uno nuevo...");
-    saveAccessToken(getNewAccessToken());
-  } else {
-    Serial.println("Access Token ya guardado: " + readAccessToken());
-  }
 
   if (!SPIFFS.begin(true)) {
     Serial.println("SPIFFS initialisation failed!");
@@ -583,17 +614,40 @@ void setup() {
 
   screenSetUp();
 
+  config = Config::load();
+
+  if (!config.hasWifi() || !connectToWifi(config)) {
+    startSetupMode();
+    return;
+  }
+
+  // La pagina de configuracion queda disponible en la red local mientras el reproductor funciona
+  portal.startOnNetwork();
+  String portalUrl = "http://" + WiFi.localIP().toString();
+
+  if (!config.hasSpotifyApp() || !config.hasRefreshToken()) {
+    showInfoScreen("Vincular Spotify",
+      "Desde un dispositivo en la misma red WiFi abri:\n\n" + portalUrl + "\n\ny segui los pasos.", portalUrl);
+    return;
+  }
+
+  if (!SpotifyAuth::refreshAccessToken(config, accessToken)) {
+    showInfoScreen("Error con Spotify",
+      "No se pudo obtener el token. Revisa la configuracion o volve a vincular la cuenta en:\n\n" + portalUrl, portalUrl);
+    return;
+  }
+
+  lv_obj_clean(lv_screen_active());
+
   // Function to draw the GUI (text, buttons and sliders)
   drawMainGui();
 
   lv_timer_create(updateScreen, 5000, NULL);
   lv_timer_create(updateProgressBar, 1000, NULL);
-
-  accessToken = readAccessToken();
 }
 
 void loop() {
-  lv_task_handler();  // let the GUI do its work
-  lv_tick_inc(5);     // tell LVGL how much time has passed
-  delay(5);           // let this time pass
+  portal.handle();
+  lv_timer_handler();  // let the GUI do its work
+  delay(5);
 }

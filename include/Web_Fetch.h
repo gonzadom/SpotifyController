@@ -1,12 +1,14 @@
 // Fetch a file from the URL given and save it in SPIFFS
-// Return 1 if a web fetch was needed or 0 if file already exists
+// Return true if the file is available (already existed or was downloaded completely)
 bool getFile(String url, String filename) {
 
   // If it exists then no need to fetch it
   if (SPIFFS.exists(filename) == true) {
     Serial.println("Found " + filename);
-    return 0;
+    return true;
   }
+
+  bool downloaded = false;
 
   Serial.println("Downloading "  + filename + " from " + url);
 
@@ -33,7 +35,8 @@ bool getFile(String url, String filename) {
       fs::File f = SPIFFS.open(filename, "w+");
       if (!f) {
         Serial.println("file open failed");
-        return 0;
+        http.end();
+        return false;
       }
       // HTTP header has been send and Server response header has been handled
       Serial.printf("[HTTP] GET... code: %d\n", httpCode);
@@ -50,7 +53,10 @@ bool getFile(String url, String filename) {
         uint8_t *buff = (uint8_t *)calloc(buff_size, sizeof(uint8_t)); //original era 128
         if (!buff) {
           Serial.print("Memory error, could not allocate buffer.\n");
-          return 0;
+          f.close();
+          SPIFFS.remove(filename);
+          http.end();
+          return false;
         }
 
         // Get tcp stream
@@ -78,15 +84,24 @@ bool getFile(String url, String filename) {
 
         free(buff);
 
+        // Si el servidor mando el tamaño, tiene que haber llegado todo
+        downloaded = total <= 0 || len == 0;
+
         Serial.println();
         Serial.print("[HTTP] connection closed or file end.\n");
       }
       f.close();
+
+      // No dejar archivos a medio bajar, se reintenta en el proximo ciclo
+      if (!downloaded) {
+        Serial.println("Descarga incompleta de " + filename);
+        SPIFFS.remove(filename);
+      }
     }
     else {
       Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
     }
     http.end();
   }
-  return 1; // File was fetched from web
+  return downloaded;
 }
