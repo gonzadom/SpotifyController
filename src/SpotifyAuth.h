@@ -6,10 +6,12 @@
 
 namespace SpotifyAuth {
   // Tiene que estar registrada tal cual en el dashboard de la app de Spotify.
-  // Spotify no permite redirect http a IPs de la red local, asi que se usa loopback:
-  // el navegador no va a cargar la pagina, pero la URL trae el codigo que necesitamos.
+  // Spotify no permite redirect http a IPs de la red local, asi que se redirige a Google
+  // y el usuario copia la URL, que trae el codigo que necesitamos. Con PKCE el codigo
+  // no sirve sin el code verifier que solo tiene la CYD, asi que no importa que lo vea Google.
   extern const char* const REDIRECT_URI;
 
+  // Link para iniciar sesion. Usa PKCE, asi no hace falta el client secret
   String authorizeUrl(const String& clientId);
 
   // Saca el parametro "code" de la URL pegada (tambien acepta el codigo solo)

@@ -8,11 +8,10 @@ struct AppConfig {
   String wifiSsid;
   String wifiPassword;
   String clientId;
-  String clientSecret;
   String refreshToken;
 
   bool hasWifi() const { return wifiSsid.length() > 0; }
-  bool hasSpotifyApp() const { return clientId.length() > 0 && clientSecret.length() > 0; }
+  bool hasSpotifyApp() const { return clientId.length() > 0; }
   bool hasRefreshToken() const { return refreshToken.length() > 0; }
 };
 

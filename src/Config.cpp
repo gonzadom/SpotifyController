@@ -16,7 +16,6 @@ AppConfig Config::load() {
   cfg.wifiSsid = readKey(prefs, "ssid");
   cfg.wifiPassword = readKey(prefs, "pass");
   cfg.clientId = readKey(prefs, "client_id");
-  cfg.clientSecret = readKey(prefs, "client_secret");
   cfg.refreshToken = readKey(prefs, "refresh_token");
 
   prefs.end();
@@ -30,7 +29,8 @@ void Config::save(const AppConfig& cfg) {
   prefs.putString("ssid", cfg.wifiSsid);
   prefs.putString("pass", cfg.wifiPassword);
   prefs.putString("client_id", cfg.clientId);
-  prefs.putString("client_secret", cfg.clientSecret);
+  // Versiones anteriores guardaban el client secret, con PKCE ya no se usa
+  if (prefs.isKey("client_secret")) prefs.remove("client_secret");
   prefs.putString("refresh_token", cfg.refreshToken);
 
   prefs.end();

@@ -159,6 +159,8 @@ bool connectToWifi(const AppConfig& cfg) {
 
   ledController.setLedRed();
 
+  // Nombre con el que aparece en el router (en muchos anda http://spotify)
+  WiFi.setHostname(ConfigPortal::HOSTNAME);
   WiFi.mode(WIFI_STA);
   WiFi.begin(cfg.wifiSsid.c_str(), cfg.wifiPassword.c_str());
 
@@ -623,17 +625,20 @@ void setup() {
 
   // La pagina de configuracion queda disponible en la red local mientras el reproductor funciona
   portal.startOnNetwork();
+  // El QR usa la IP porque siempre funciona. En el texto va primero el nombre, que es mas facil
+  // de escribir (.local no anda en algunos Android, por eso tambien se muestra la IP)
   String portalUrl = "http://" + WiFi.localIP().toString();
+  String portalAddress = "http://" + String(ConfigPortal::HOSTNAME) + ".local\n(o " + portalUrl + ")";
 
   if (!config.hasSpotifyApp() || !config.hasRefreshToken()) {
     showInfoScreen("Vincular Spotify",
-      "Desde un dispositivo en la misma red WiFi abri:\n\n" + portalUrl + "\n\ny segui los pasos.", portalUrl);
+      "Escanea el QR o abri desde un dispositivo en la misma red WiFi:\n\n" + portalAddress, portalUrl);
     return;
   }
 
   if (!SpotifyAuth::refreshAccessToken(config, accessToken)) {
     showInfoScreen("Error con Spotify",
-      "No se pudo obtener el token. Revisa la configuracion o volve a vincular la cuenta en:\n\n" + portalUrl, portalUrl);
+      "No se pudo obtener el token. Volve a vincular la cuenta en:\n\n" + portalAddress, portalUrl);
     return;
   }
 

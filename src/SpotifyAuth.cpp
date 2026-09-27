@@ -1,8 +1,9 @@
 #include "SpotifyAuth.h"
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <mbedtls/sha256.h>
 
-const char* const SpotifyAuth::REDIRECT_URI = "http://127.0.0.1:8888/callback";
+const char* const SpotifyAuth::REDIRECT_URI = "https://www.google.com/";
 
 static const char* SCOPES = "user-read-currently-playing user-read-playback-state user-modify-playback-state";
 static const char* TOKEN_URL = "https://accounts.spotify.com/api/token";
@@ -25,13 +26,53 @@ static String urlEncode(const String& value) {
   return encoded;
 }
 
+// Base64 "url safe" sin padding, como pide PKCE
+static String base64UrlEncode(const uint8_t* data, size_t len) {
+  const char* alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  String encoded;
+  encoded.reserve((len * 4) / 3 + 3);
+
+  for (size_t i = 0; i < len; i += 3) {
+    uint32_t chunk = (uint32_t)data[i] << 16;
+    if (i + 1 < len) chunk |= (uint32_t)data[i + 1] << 8;
+    if (i + 2 < len) chunk |= data[i + 2];
+
+    encoded += alphabet[(chunk >> 18) & 0x3F];
+    encoded += alphabet[(chunk >> 12) & 0x3F];
+    if (i + 1 < len) encoded += alphabet[(chunk >> 6) & 0x3F];
+    if (i + 2 < len) encoded += alphabet[chunk & 0x3F];
+  }
+  return encoded;
+}
+
+// PKCE: el code verifier es un valor aleatorio que solo conoce la CYD. Al pedir la autorizacion
+// se manda su hash (code challenge) y al canjear el codigo se manda el valor original,
+// asi Spotify sabe que es el mismo dispositivo sin necesitar el client secret.
+// Se genera una vez por arranque (despues de vincular la cuenta la CYD se reinicia)
+static String codeVerifier() {
+  static String verifier;
+  if (verifier.length() == 0) {
+    uint8_t random[32];
+    esp_fill_random(random, sizeof(random));
+    verifier = base64UrlEncode(random, sizeof(random));
+  }
+  return verifier;
+}
+
+static String codeChallenge() {
+  String verifier = codeVerifier();
+  uint8_t hash[32];
+  mbedtls_sha256_ret((const unsigned char*)verifier.c_str(), verifier.length(), hash, 0);
+  return base64UrlEncode(hash, sizeof(hash));
+}
+
 // Hace el POST al endpoint de tokens de Spotify y deja la respuesta parseada en doc
 static bool postTokenRequest(const AppConfig& cfg, const String& grantParams, JsonDocument& doc, String& error) {
   HTTPClient http;
   http.begin(TOKEN_URL);
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
 
-  String body = grantParams + "&client_id=" + urlEncode(cfg.clientId) + "&client_secret=" + urlEncode(cfg.clientSecret);
+  String body = grantParams + "&client_id=" + urlEncode(cfg.clientId);
   int httpCode = http.POST(body);
   String response = http.getString();
   http.end();
@@ -51,7 +92,9 @@ String SpotifyAuth::authorizeUrl(const String& clientId) {
   return String("https://accounts.spotify.com/authorize?response_type=code")
     + "&client_id=" + urlEncode(clientId)
     + "&scope=" + urlEncode(SCOPES)
-    + "&redirect_uri=" + urlEncode(REDIRECT_URI);
+    + "&redirect_uri=" + urlEncode(REDIRECT_URI)
+    + "&code_challenge_method=S256"
+    + "&code_challenge=" + codeChallenge();
 }
 
 String SpotifyAuth::extractCode(const String& pastedUrl) {
@@ -74,7 +117,8 @@ String SpotifyAuth::extractCode(const String& pastedUrl) {
 
 bool SpotifyAuth::exchangeCode(AppConfig& cfg, const String& code, String& error) {
   JsonDocument doc;
-  String params = "grant_type=authorization_code&code=" + urlEncode(code) + "&redirect_uri=" + urlEncode(REDIRECT_URI);
+  String params = "grant_type=authorization_code&code=" + urlEncode(code) + "&redirect_uri=" + urlEncode(REDIRECT_URI)
+    + "&code_verifier=" + codeVerifier();
 
   if (!postTokenRequest(cfg, params, doc, error)) {
     return false;
@@ -101,7 +145,7 @@ bool SpotifyAuth::refreshAccessToken(AppConfig& cfg, String& accessToken) {
 
   accessToken = doc["access_token"].as<String>();
 
-  // Spotify a veces devuelve un refresh token nuevo, y el viejo deja de servir
+  // Con PKCE Spotify devuelve un refresh token nuevo en cada refresco, y el viejo deja de servir
   const char* newRefreshToken = doc["refresh_token"];
   if (newRefreshToken && cfg.refreshToken != newRefreshToken) {
     cfg.refreshToken = newRefreshToken;

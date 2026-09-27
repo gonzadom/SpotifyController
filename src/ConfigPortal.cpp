@@ -166,9 +166,7 @@ void ConfigPortal::handleRoot() {
   body += "<p class=\"hint\">Cre&aacute; una app en <a href=\"https://developer.spotify.com/dashboard\" target=\"_blank\">developer.spotify.com/dashboard</a> ";
   body += "(tildando <b>Web API</b>) y agreg&aacute; esta Redirect URI:<br><code>" + String(SpotifyAuth::REDIRECT_URI) + "</code></p>";
   body += "<label>Client ID</label><input name=\"client_id\" value=\"" + htmlEscape(cfg.clientId) + "\">";
-  body += "<label>Client Secret</label><input name=\"client_secret\" type=\"password\"";
-  if (cfg.clientSecret.length() > 0) body += " placeholder=\"(dejar vacio para no cambiarlo)\"";
-  body += "><button>Guardar</button></form>";
+  body += "<button>Guardar</button></form>";
 
   // Paso 3: vincular la cuenta (necesita que la CYD tenga internet)
   body += "<h2>3. Vincular cuenta de Spotify</h2>";
@@ -176,13 +174,13 @@ void ConfigPortal::handleRoot() {
     body += "<p class=\"hint\">Este paso se hace cuando la CYD ya est&eacute; conectada a tu WiFi. ";
     body += "Guard&aacute; los datos de arriba y segu&iacute; las instrucciones de la pantalla.</p>";
   } else if (!cfg.hasSpotifyApp()) {
-    body += "<p class=\"hint\">Primero carg&aacute; el Client ID y el Client Secret.</p>";
+    body += "<p class=\"hint\">Primero carg&aacute; el Client ID.</p>";
   } else {
     body += "<ol class=\"hint\">";
     body += "<li><a href=\"" + htmlEscape(SpotifyAuth::authorizeUrl(cfg.clientId)) + "\" target=\"_blank\">Abr&iacute; este link</a> e inici&aacute; sesi&oacute;n.</li>";
-    body += "<li>Vas a llegar a una p&aacute;gina que no carga (127.0.0.1). Es normal: copi&aacute; la direcci&oacute;n completa de la barra del navegador.</li>";
+    body += "<li>Te va a llevar a Google. Copi&aacute; la direcci&oacute;n completa de la barra del navegador (tiene <code>?code=</code>).</li>";
     body += "<li>Pegala ac&aacute;:</li></ol>";
-    body += "<form method=\"post\" action=\"/auth\"><textarea name=\"url\" required placeholder=\"http://127.0.0.1:8888/callback?code=...\"></textarea>";
+    body += "<form method=\"post\" action=\"/auth\"><textarea name=\"url\" required placeholder=\"https://www.google.com/?code=...\"></textarea>";
     body += "<button>Vincular</button></form>";
   }
 
@@ -197,10 +195,8 @@ void ConfigPortal::handleSave() {
   String ssid = server.arg("ssid");
   String pass = server.arg("pass");
   String clientId = server.arg("client_id");
-  String clientSecret = server.arg("client_secret");
   ssid.trim();
   clientId.trim();
-  clientSecret.trim();
 
   if (ssid.length() == 0) {
     sendMessage("Error", "Falta el nombre de la red WiFi.", true);
@@ -214,10 +210,9 @@ void ConfigPortal::handleSave() {
     cfg.wifiPassword = pass;
   }
 
-  bool spotifyChanged = clientId != cfg.clientId || clientSecret.length() > 0;
+  bool spotifyChanged = clientId != cfg.clientId;
   if (spotifyChanged) {
     cfg.clientId = clientId;
-    if (clientSecret.length() > 0) cfg.clientSecret = clientSecret;
     // Con otra app el refresh token viejo no sirve, hay que volver a vincular
     cfg.refreshToken = "";
   }
